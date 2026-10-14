@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>リアルタイムGoogle掲示板</title>
+  <!-- Tailwind CSS (デザイン用) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome (アイコン用) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen">
+
+  <!-- ヘッダー -->
+  <header class="bg-white shadow-sm sticky top-0 z-10">
+    <div class="max-w-3xl mx-auto px-4 py-4 flex justify-between items-center">
+      <h1 class="text-xl font-bold text-indigo-600 flex items-center gap-2">
+        <i class="fa-solid font-bold fa-comments"></i> Live Board
+      </h1>
+      
+      <!-- ログイン状態の表示・ボタン -->
+      <div id="auth-section">
+        <button id="login-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium shadow transition flex items-center gap-2 text-sm">
+          <i class="fa-brands fa-google"></i> Googleでログイン
+        </button>
+        <div id="user-profile" class="hidden flex items-center gap-3">
+          <img id="user-avatar" class="w-8 h-8 rounded-full border border-slate-200" src="" alt="avatar">
+          <span id="user-name" class="font-medium text-sm text-slate-700 hidden sm:inline"></span>
+          <button id="logout-btn" class="text-slate-500 hover:text-red-600 text-xs font-medium border border-slate-300 hover:border-red-300 px-2.5 py-1.5 rounded transition">
+            ログアウト
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-3xl mx-auto px-4 py-6 space-y-6">
+
+    <!-- 投稿フォーム（未ログイン時はメッセージを表示） -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+      <div id="post-form-wrapper" class="hidden">
+        <form id="post-form" class="space-y-3">
+          <textarea id="post-input" rows="3" class="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none text-slate-700" placeholder="いまどうしてる？（公序良俗を守って投稿しよう）" required></textarea>
+          <div class="flex justify-end">
+            <button type="submit" id="submit-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-5 py-2 rounded-lg shadow-sm transition flex items-center gap-2 text-sm">
+              <i class="fa-solid fa-paper-plane"></i> 投稿する
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div id="login-prompt" class="text-center py-6 text-slate-500">
+        <p class="mb-3 text-sm">掲示板に投稿・いいね・削除をするにはログインが必要です</p>
+        <button id="prompt-login-btn" class="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg shadow transition">
+          <i class="fa-brands fa-google"></i> Googleアカウントでログイン
+        </button>
+      </div>
+    </div>
+
+    <!-- タイムライン（投稿一覧） -->
+    <div class="space-y-4">
+      <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider px-1">タイムライン</h2>
+      <div id="posts-container" class="space-y-3">
+        <!-- 読み込み中表示 -->
+        <div class="text-center py-10 text-slate-400">
+          <i class="fa-solid fa-circle-notch fa-spin text-2xl mb-2"></i>
+          <p class="text-sm">投稿を読み込んでいます...</p>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Firebase Web SDK (v10) -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { 
+      getAuth, 
+      GoogleAuthProvider, 
+      signInWithPopup, 
+      signOut, 
+      onAuthStateChanged 
+    } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+    import { 
+      getFirestore, 
+      collection, 
+      addDoc, 
+      deleteDoc, 
+      doc, 
+      query, 
+      orderBy, 
+      onSnapshot, 
+      serverTimestamp 
+    } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+    // =========================================================
+    // ⚙️ 【要変更】 Firebaseの設定情報をここに貼り付けてください
+    // =========================================================
+    // Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyA83OSMW4k-yuUclG5hN2wzTCUHRU6oOUM",
+  authDomain: "keijiban-a521e.firebaseapp.com",
+  projectId: "keijiban-a521e",
+  storageBucket: "keijiban-a521e.firebasestorage.app",
+  messagingSenderId: "1025750377500",
+  appId: "1:1025750377500:web:78c259f0bc97f57de6ebd9",
+  measurementId: "G-VCP2VNMEKB"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_PROJECT_ID.appspot.com",
+      messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+      appId: "YOUR_APP_ID"
+    };
+
+    // Firebase 初期化
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    const provider = new GoogleAuthProvider();
+
+    // グローバル変数
+    let currentUser = null;
+
+    // --- DOM要素 ---
+    const loginBtn = document.getElementById("login-btn");
+    const promptLoginBtn = document.getElementById("prompt-login-btn");
+    const logoutBtn = document.getElementById("logout-btn");
+    const userProfile = document.getElementById("user-profile");
+    const userAvatar = document.getElementById("user-avatar");
+    const userName = document.getElementById("user-name");
+    const postFormWrapper = document.getElementById("post-form-wrapper");
+    const loginPrompt = document.getElementById("login-prompt");
+    const postForm = document.getElementById("post-form");
+    const postInput = document.getElementById("post-input");
+    const postsContainer = document.getElementById("posts-container");
+
+    // --- ログイン / ログアウト処理 ---
+    const handleLogin = async () => {
+      try {
+        await signInWithPopup(auth, provider);
+      } catch (error) {
+        console.error("ログインエラー:", error);
+        alert("ログインに失敗しました: " + error.message);
+      }
+    };
+
+    const handleLogout = async () => {
+      try {
+        await signOut(auth);
+      } catch (error) {
+        console.error("ログアウトエラー:", error);
+      }
+    };
+
+    loginBtn.addEventListener("click", handleLogin);
+    promptLoginBtn.addEventListener("click", handleLogin);
+    logoutBtn.addEventListener("click", handleLogout);
+
+    // 認証状態の監視
+    onAuthStateChanged(auth, (user) => {
+      currentUser = user;
+      if (user) {
+        // ログイン時
+        loginBtn.classList.add("hidden");
+        userProfile.classList.remove("hidden");
+        userAvatar.src = user.photoURL || "https://via.placeholder.com/40";
+        userName.textContent = user.displayName;
+        postFormWrapper.classList.remove("hidden");
+        loginPrompt.classList.add("hidden");
+      } else {
+        // ログアウト時
+        loginBtn.classList.remove("hidden");
+        userProfile.classList.add("hidden");
+        postFormWrapper.classList.add("hidden");
+        loginPrompt.classList.remove("hidden");
+      }
+    });
+
+    // --- 投稿作成 ---
+    postForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const content = postInput.value.trim();
+      if (!content || !currentUser) return;
+
+      try {
+        await addDoc(collection(db, "posts"), {
+          text: content,
+          uid: currentUser.uid,
+          authorName: currentUser.displayName,
+          authorPhoto: currentUser.photoURL,
+          createdAt: serverTimestamp()
+        });
+        postInput.value = "";
+      } catch (error) {
+        console.error("投稿追加エラー:", error);
+        alert("投稿の送信に失敗しました。");
+      }
+    });
+
+    // --- リアルタイムタイムライン監視 ---
+    const q = query(collection(db, "posts"), orderBy("createdAt", "desc"));
+
+    onSnapshot(q, (snapshot) => {
+      postsContainer.innerHTML = "";
+
+      if (snapshot.empty) {
+        postsContainer.innerHTML = `
+          <div class="bg-white rounded-xl p-8 text-center text-slate-400 border border-slate-200">
+            <i class="fa-regular fa-comment-dots text-3xl mb-2"></i>
+            <p>まだ投稿がありません。最初の投稿をしてみましょう！</p>
+          </div>
+        `;
+        return;
+      }
+
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        const id = docSnap.id;
+        const isMyPost = currentUser && currentUser.uid === data.uid;
+
+        // 日時フォーマット
+        let timeString = "投稿中...";
+        if (data.createdAt) {
+          const date = data.createdAt.toDate();
+          timeString = date.toLocaleString("ja-JP", {
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit"
+          });
+        }
+
+        // カード要素作成
+        const postCard = document.createElement("div");
+        postCard.className = "bg-white rounded-xl p-4 shadow-sm border border-slate-200 space-y-3 transition hover:border-slate-300";
+
+        // HTML生成 (XSS対策のためエスケープ処理を実施)
+        postCard.innerHTML = `
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <img src="${escapeHtml(data.authorPhoto || 'https://via.placeholder.com/40')}" class="w-9 h-9 rounded-full border border-slate-100" alt="avatar">
+              <div>
+                <p class="font-semibold text-sm text-slate-800">${escapeHtml(data.authorName || '匿名')}</p>
+                <p class="text-xs text-slate-400">${timeString}</p>
+              </div>
+            </div>
+            ${isMyPost ? `
+              <button class="delete-btn text-slate-400 hover:text-red-500 text-xs px-2 py-1 rounded hover:bg-slate-50 transition" data-id="${id}">
+                <i class="fa-solid fa-trash-can"></i> 削除
+              </button>
+            ` : ''}
+          </div>
+          <p class="text-slate-700 text-sm whitespace-pre-wrap leading-relaxed">${escapeHtml(data.text)}</p>
+        `;
+
+        // 削除ボタンのイベントリスナー設定
+        if (isMyPost) {
+          const deleteBtn = postCard.querySelector(".delete-btn");
+          deleteBtn.addEventListener("click", async () => {
+            if (confirm("この投稿を削除しますか？")) {
+              try {
+                await deleteDoc(doc(db, "posts", id));
+              } catch (err) {
+                console.error("削除エラー:", err);
+                alert("投稿の削除に失敗しました。");
+              }
+            }
+          });
+        }
+
+        postsContainer.appendChild(postCard);
+      });
+    }, (error) => {
+      console.error("データ読み込みエラー:", error);
+      postsContainer.innerHTML = `<div class="text-red-500 text-center py-4 text-sm">データの読み込みに失敗しました。Firebaseの設定（ルール）を確認してください。</div>`;
+    });
+
+    // XSS対策用ヘルパー
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str.replace(/[&<>"']/g, (m) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      })[m]);
+    }
+  </script>
+</body>
+</html>
